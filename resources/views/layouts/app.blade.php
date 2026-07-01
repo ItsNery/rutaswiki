@@ -5,7 +5,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+        <title>@hasSection('title')@yield('title') · @endif{{ config('app.name', 'RutasWiki') }}</title>
+
+        <meta property="og:site_name" content="{{ config('app.name', 'RutasWiki') }}">
+        <meta property="og:type" content="website">
+        <meta name="twitter:card" content="summary_large_image">
+        @stack('meta')
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
@@ -39,6 +44,7 @@
             <main>
                 {{ $slot }}
             </main>
+            @include('components.footer')
         </div>
         @stack('scripts')
     </body>

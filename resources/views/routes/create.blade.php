@@ -27,6 +27,28 @@
                 </a>
             </div>
 
+            <!-- Draft restore banner -->
+            <div x-show="draftAvailable && !draftRestored" 
+                 class="mb-6 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 p-4 rounded-sm text-amber-800 dark:text-amber-200 text-sm flex items-center justify-between gap-4"
+                 x-cloak x-transition>
+                <div class="flex items-center gap-2">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>Tienes un borrador guardado de tu sesión anterior. <strong x-text="draftAge"></strong></span>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <button @click="restoreDraft()" class="px-3 py-1 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-sm transition">Restaurar</button>
+                    <button @click="discardDraft()" class="px-3 py-1 text-xs font-bold border border-amber-300 dark:border-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-sm transition">Descartar</button>
+                </div>
+            </div>
+
+            <!-- Autosave indicator -->
+            <div x-show="draftRestored || draftSaved"
+                 class="mb-4 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5 px-4 sm:px-0"
+                 x-cloak>
+                <svg x-show="draftSaved" class="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <span x-text="draftSaved ? 'Borrador guardado automáticamente' : ''"></span>
+            </div>
+
             @if ($errors->any())
                 <div class="mb-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 rounded-sm text-red-800 dark:text-red-300 text-sm">
                     <div class="font-bold mb-1">Por favor corrige los siguientes errores:</div>
@@ -272,12 +294,17 @@
                         transport_type: 'bus',
                         color: '#3b82f6'
                     },
-                    geometry: null, // Holds { type: 'LineString', coordinates: [...] }
-                    stops: [], // Holds array of objects { name, latitude, longitude, description }
+                    geometry: null,
+                    stops: [],
                     showStopModal: false,
                     newStopLatLng: null,
                     newStopLayer: null,
                     newStopName: '',
+
+                    draftSaved: false,
+                    draftAvailable: false,
+                    draftRestored: false,
+                    draftAge: '',
 
                     schedules: [
                         { day_type: 'weekday', is_active: true, start_time: '06:00', end_time: '22:00', frequency_minutes: 15, timetable: [] },
@@ -290,10 +317,16 @@
                     drawControl: null,
                     drawnItems: null,
 
+                    get storageKey() {
+                        return 'route_draft_city_{{ $city->id }}';
+                    },
+
                     init() {
                         this.$nextTick(() => {
                             this.initMap();
+                            this.checkDraft();
                             this.fetchAllTimetables();
+                            setInterval(() => this.saveDraft(), 5000);
                         });
                     },
 
@@ -345,6 +378,7 @@
 
                                 this.drawnItems.addLayer(layer);
                                 this.updateGeometry(layer);
+                                this.saveDraft();
                             } else if (type === 'marker') {
                                 this.newStopLatLng = layer.getLatLng();
                                 this.newStopLayer = layer;
@@ -368,6 +402,7 @@
                                     }
                                 }
                             });
+                            this.saveDraft();
                         });
 
                         // Event handler for deletion
@@ -380,6 +415,7 @@
                                     this.stops = this.stops.filter(s => s._layerId !== stampId);
                                 }
                             });
+                            this.saveDraft();
                         });
                     },
 
@@ -414,6 +450,7 @@
 
                         // Remove from state
                         this.stops.splice(index, 1);
+                        this.saveDraft();
                     },
 
                     confirmStop() {
@@ -441,6 +478,7 @@
                         this.newStopLatLng = null;
                         this.newStopLayer = null;
                         this.newStopName = '';
+                        this.saveDraft();
                     },
 
                     cancelStop() {
@@ -451,6 +489,90 @@
                         this.newStopLatLng = null;
                         this.newStopLayer = null;
                         this.newStopName = '';
+                    },
+
+                    saveDraft() {
+                        if (!this.draftRestored && !this.geometry && this.stops.length === 0 && !this.form.name) {
+                            return;
+                        }
+                        const data = {
+                            form: this.form,
+                            geometry: this.geometry,
+                            stops: this.stops.map(s => ({ name: s.name, latitude: s.latitude, longitude: s.longitude, description: s.description })),
+                            schedules: this.schedules.map(s => ({ day_type: s.day_type, is_active: s.is_active, start_time: s.start_time, end_time: s.end_time, frequency_minutes: s.frequency_minutes })),
+                            savedAt: new Date().toISOString()
+                        };
+                        localStorage.setItem(this.storageKey, JSON.stringify(data));
+                        this.draftSaved = true;
+                    },
+
+                    checkDraft() {
+                        const saved = localStorage.getItem(this.storageKey);
+                        if (!saved) return;
+                        try {
+                            const data = JSON.parse(saved);
+                            const age = Date.now() - new Date(data.savedAt).getTime();
+                            if (age > 86400000) { this.clearDraft(); return; }
+                            const mins = Math.round(age / 60000);
+                            this.draftAge = mins < 1 ? 'hace segundos' : mins < 60 ? `hace ${mins} min` : `hace ${Math.round(mins/60)}h`;
+                            if (data.geometry || data.stops.length > 0 || data.form.name) {
+                                this.draftAvailable = true;
+                                this._draftData = data;
+                            }
+                        } catch(e) {}
+                    },
+
+                    restoreDraft() {
+                        const data = this._draftData;
+                        if (!data) return;
+                        this.form = data.form;
+                        this.schedules = data.schedules;
+                        this.draftRestored = true;
+                        this.draftAvailable = false;
+                        this.$nextTick(() => {
+                            if (data.geometry) {
+                                this.loadDrawnItems(data.geometry, data.stops);
+                            }
+                        });
+                    },
+
+                    loadDrawnItems(geometry, stops) {
+                        this.drawnItems.clearLayers();
+                        if (geometry) {
+                            const geojson = L.geoJSON(geometry, {
+                                style: { color: this.form.color, weight: 5 }
+                            });
+                            let polylineLayer;
+                            geojson.eachLayer(layer => { polylineLayer = layer; this.drawnItems.addLayer(layer); });
+                            this.geometry = geometry;
+                            if (polylineLayer) {
+                                this.map.fitBounds(polylineLayer.getBounds(), { padding: [50, 50] });
+                            }
+                        }
+                        this.stops = [];
+                        if (stops && stops.length > 0) {
+                            stops.forEach(s => {
+                                const marker = L.marker([s.latitude, s.longitude]).bindPopup(`<b>${s.name}</b>`);
+                                this.drawnItems.addLayer(marker);
+                                this.stops.push({ ...s, _layerId: L.stamp(marker) });
+                            });
+                            if (this.stops.length > 0 && !geometry) {
+                                const group = L.featureGroup(this.stops.map(s => L.marker([s.latitude, s.longitude])));
+                                this.map.fitBounds(group.getBounds(), { padding: [50, 50] });
+                            }
+                        }
+                        this.saveDraft();
+                    },
+
+                    discardDraft() {
+                        this.clearDraft();
+                        this.draftAvailable = false;
+                        this._draftData = null;
+                    },
+
+                    clearDraft() {
+                        localStorage.removeItem(this.storageKey);
+                        this.draftSaved = false;
                     },
 
                     getDayLabel(type) {
@@ -492,6 +614,7 @@
                             return;
                         }
 
+                        this.clearDraft();
                         document.getElementById('route-form').submit();
                     }
                 };

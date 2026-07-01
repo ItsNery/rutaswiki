@@ -35,6 +35,9 @@
                     <x-nav-link :href="route('cities.index')" :active="request()->routeIs('cities.index') || request()->routeIs('cities.show')">
                         Ciudades
                     </x-nav-link>
+                    <x-nav-link :href="route('map')" :active="request()->routeIs('map')">
+                        Mapa
+                    </x-nav-link>
                     @auth
                         <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
                             Dashboard
@@ -112,6 +115,9 @@
             </x-responsive-nav-link>
             <x-responsive-nav-link :href="route('cities.index')" :active="request()->routeIs('cities.index') || request()->routeIs('cities.show')">
                 Ciudades
+            </x-responsive-nav-link>
+            <x-responsive-nav-link :href="route('map')" :active="request()->routeIs('map')">
+                Mapa
             </x-responsive-nav-link>
             @auth
                 <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">

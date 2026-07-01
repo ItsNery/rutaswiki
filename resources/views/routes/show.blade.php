@@ -1,4 +1,11 @@
 <x-app-layout>
+    @push('meta')
+        <meta property="og:title" content="{{ $route->route_number ? '[' . $route->route_number . '] ' : '' }}{{ $route->name }} · {{ $city->name }}">
+        <meta property="og:description" content="{{ $route->description ? mb_substr($route->description, 0, 200) : 'Ruta de ' . $city->name . ', ' . $city->state . '. ' . ucfirst($route->transport_type) . '. Consulta horarios, paradas y mapa del trayecto en RutasWiki.' }}">
+        <meta property="og:url" content="{{ route('routes.show', [$city, $route]) }}">
+        <meta name="description" content="{{ $route->description ? mb_substr($route->description, 0, 200) : 'Ruta de ' . $city->name . ', ' . $city->state . '. ' . ucfirst($route->transport_type) . '. Consulta horarios, paradas y mapa del trayecto en RutasWiki.' }}">
+    @endpush
+    @section('title', ($route->route_number ? '[' . $route->route_number . '] ' : '') . $route->name . ' · ' . $city->name)
     @push('styles')
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
         <style>
@@ -221,7 +228,7 @@
                     <!-- == Paradas == -->
                     <div class="mt-8">
                         <h2 class="text-xl font-normal font-serif border-b border-gray-300 dark:border-gray-700 pb-1 mb-4 flex justify-between items-center">
-                            <span>Estaciones y Paradas oficiales</span>
+                            <span>Paradas</span>
                             <a href="{{ route('routes.edit', [$city, $route]) }}" class="text-xs text-blue-600 dark:text-blue-400 hover:underline font-normal font-sans">[editar]</a>
                         </h2>
                         

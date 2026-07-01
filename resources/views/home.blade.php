@@ -1,4 +1,10 @@
 <x-app-layout>
+    @push('meta')
+        <meta property="og:title" content="RutasWiki — Enciclopedia colaborativa de transporte público">
+        <meta property="og:description" content="Explora, registra y edita rutas de camiones, combis y metros en México. La enciclopedia libre de transporte público que cualquiera puede editar.">
+        <meta property="og:url" content="{{ route('home') }}">
+        <meta name="description" content="Explora, registra y edita rutas de camiones, combis y metros en México. La enciclopedia libre de transporte público que cualquiera puede editar.">
+    @endpush
     @push('styles')
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     @endpush
@@ -20,11 +26,11 @@
 
                 <!-- Quick Search in Welcome box -->
                 <div class="w-full md:w-80">
-                    <form action="{{ route('cities.index') }}" method="GET" class="flex">
+                    <form action="{{ route('search') }}" method="GET" class="flex">
                         <div class="relative w-full">
-                            <input type="text" name="search" required
+                            <input type="text" name="q" required
                                 class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-sm dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
-                                placeholder="Buscar ciudad o ruta...">
+                                placeholder="Buscar ruta o ciudad...">
                         </div>
                         <button type="submit"
                             class="ml-1 px-3 py-1.5 text-sm font-medium bg-gray-100 border border-gray-300 hover:bg-gray-200 dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-650 rounded-sm transition">

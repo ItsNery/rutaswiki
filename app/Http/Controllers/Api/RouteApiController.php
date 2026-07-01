@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 use App\Models\City;
 use App\Models\TransitRoute;
@@ -12,47 +13,76 @@ class RouteApiController extends Controller
 {
     public function index(City $city)
     {
-        // 1. Get routes belonging directly to this city
-        $cityRoutes = $city->transitRoutes()
-            ->with(['stops', 'city'])
-            ->where('status', 'published')
-            ->get();
+        return Cache::remember("api.city.{$city->id}.routes", 600, function () use ($city) {
+            $cityRoutes = $city->transitRoutes()
+                ->with(['stops', 'city'])
+                ->where('status', 'published')
+                ->get();
 
-        // 2. Get all other published routes (from other cities) to check proximity
-        $otherRoutes = TransitRoute::with(['stops', 'city'])
-            ->where('city_id', '!=', $city->id)
-            ->where('status', 'published')
-            ->get();
+            $otherRoutes = TransitRoute::with(['stops', 'city'])
+                ->where('city_id', '!=', $city->id)
+                ->where('status', 'published')
+                ->get();
 
-        // Filter other routes that pass near the city center (within 15 km)
-        $nearbyOtherRoutes = $otherRoutes->filter(function ($route) use ($city) {
-            return $route->passesNear($city->latitude, $city->longitude, 15);
+            $nearbyOtherRoutes = $otherRoutes->filter(function ($route) use ($city) {
+                return $route->passesNear($city->latitude, $city->longitude, 10);
+            });
+
+            $routes = $cityRoutes->concat($nearbyOtherRoutes);
+
+            $features = $routes->map(function ($route) {
+                return [
+                    'type' => 'Feature',
+                    'id' => $route->id,
+                    'properties' => [
+                        'route_number' => $route->route_number,
+                        'name' => $route->name,
+                        'transport_type' => $route->transport_type,
+                        'color' => $route->color,
+                        'vote_score' => $route->vote_score,
+                        'description' => $route->description,
+                        'url' => route('routes.show', [$route->city, $route]),
+                    ],
+                    'geometry' => $route->geometry,
+                ];
+            });
+
+            return response()->json([
+                'type' => 'FeatureCollection',
+                'features' => $features->values(),
+            ]);
         });
+    }
 
-        // 3. Combine them
-        $routes = $cityRoutes->concat($nearbyOtherRoutes);
+    public function search(Request $request)
+    {
+        $request->validate(['q' => 'required|string|max:100']);
 
-        $features = $routes->map(function ($route) {
+        $q = $request->input('q');
+
+        $routes = TransitRoute::with('city')
+            ->where('status', 'published')
+            ->where(function ($query) use ($q) {
+                $query->where('name', 'like', "%{$q}%")
+                    ->orWhere('route_number', 'like', "%{$q}%");
+            })
+            ->orderBy('vote_score', 'desc')
+            ->take(10)
+            ->get();
+
+        return response()->json($routes->map(function ($route) {
             return [
-                'type' => 'Feature',
                 'id' => $route->id,
-                'properties' => [
-                    'route_number' => $route->route_number,
-                    'name' => $route->name,
-                    'transport_type' => $route->transport_type,
-                    'color' => $route->color,
-                    'vote_score' => $route->vote_score,
-                    'description' => $route->description,
-                    'url' => route('routes.show', [$route->city, $route]),
-                ],
-                'geometry' => $route->geometry,
+                'slug' => $route->slug,
+                'route_number' => $route->route_number,
+                'name' => $route->name,
+                'transport_type' => $route->transport_type,
+                'color' => $route->color,
+                'vote_score' => $route->vote_score,
+                'city' => ['name' => $route->city->name, 'slug' => $route->city->slug],
+                'url' => route('routes.show', [$route->city, $route]),
             ];
-        });
-
-        return response()->json([
-            'type' => 'FeatureCollection',
-            'features' => $features->values(),
-        ]);
+        }));
     }
 
     public function nearby(Request $request)
@@ -65,61 +95,67 @@ class RouteApiController extends Controller
 
         $lat = (float) $request->input('latitude');
         $lng = (float) $request->input('longitude');
-        $radius = (float) $request->input('radius', 5); // default to 5 km
+        $radius = (float) $request->input('radius', 5);
 
-        $routes = TransitRoute::with(['stops', 'city'])
-            ->where('status', 'published')
-            ->get();
+        $cacheKey = 'api.nearby.' . (int)($lat * 10) . '.' . (int)($lng * 10) . '.' . (int)$radius;
 
-        $nearbyRoutes = $routes->filter(function ($route) use ($lat, $lng, $radius) {
-            return $route->passesNear($lat, $lng, $radius);
+        return Cache::remember($cacheKey, 300, function () use ($lat, $lng, $radius) {
+            $routes = TransitRoute::with(['stops', 'city'])
+                ->where('status', 'published')
+                ->get();
+
+            $nearbyRoutes = $routes->filter(function ($route) use ($lat, $lng, $radius) {
+                return $route->passesNear($lat, $lng, $radius);
+            });
+
+            $features = $nearbyRoutes->map(function ($route) {
+                return [
+                    'type' => 'Feature',
+                    'id' => $route->id,
+                    'properties' => [
+                        'route_number' => $route->route_number,
+                        'name' => $route->name,
+                        'transport_type' => $route->transport_type,
+                        'color' => $route->color,
+                        'vote_score' => $route->vote_score,
+                        'description' => $route->description,
+                        'url' => route('routes.show', [$route->city, $route]),
+                    ],
+                    'geometry' => $route->geometry,
+                ];
+            });
+
+            return response()->json([
+                'type' => 'FeatureCollection',
+                'features' => $features->values(),
+            ]);
         });
-
-        $features = $nearbyRoutes->map(function ($route) {
-            return [
-                'type' => 'Feature',
-                'id' => $route->id,
-                'properties' => [
-                    'route_number' => $route->route_number,
-                    'name' => $route->name,
-                    'transport_type' => $route->transport_type,
-                    'color' => $route->color,
-                    'vote_score' => $route->vote_score,
-                    'description' => $route->description,
-                    'url' => route('routes.show', [$route->city, $route]),
-                ],
-                'geometry' => $route->geometry,
-            ];
-        });
-
-        return response()->json([
-            'type' => 'FeatureCollection',
-            'features' => $features->values(),
-        ]);
     }
 
     public function show(TransitRoute $route)
     {
-        $route->load('stops');
+        return Cache::remember("api.route.{$route->id}", 600, function () use ($route) {
+            $route->load('stops');
 
-        return response()->json([
-            'id' => $route->id,
-            'route_number' => $route->route_number,
-            'name' => $route->name,
-            'description' => $route->description,
-            'transport_type' => $route->transport_type,
-            'geometry' => $route->geometry,
-            'color' => $route->color,
-            'stops' => $route->stops->map(function ($stop) {
-                return [
-                    'id' => $stop->id,
-                    'name' => $stop->name,
-                    'latitude' => $stop->latitude,
-                    'longitude' => $stop->longitude,
-                    'order' => $stop->order,
-                    'description' => $stop->description,
-                ];
-            }),
-        ]);
+            return response()->json([
+                'id' => $route->id,
+                'route_number' => $route->route_number,
+                'name' => $route->name,
+                'description' => $route->description,
+                'transport_type' => $route->transport_type,
+                'geometry' => $route->geometry,
+                'color' => $route->color,
+                'stops' => $route->stops->map(function ($stop) {
+                    return [
+                        'id' => $stop->id,
+                        'name' => $stop->name,
+                        'latitude' => $stop->latitude,
+                        'longitude' => $stop->longitude,
+                        'order' => $stop->order,
+                        'description' => $stop->description,
+                    ];
+                }),
+            ]);
+        });
     }
 }

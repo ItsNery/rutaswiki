@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 
 use App\Models\City;
+use App\Models\TransitRoute;
+use Illuminate\Support\Facades\Cache;
 
 class CityController extends Controller
 {
@@ -16,6 +18,35 @@ class CityController extends Controller
             ->get();
 
         return view('home', compact('featuredCities'));
+    }
+
+    public function map()
+    {
+        $cities = City::withCount('transitRoutes')
+            ->orderBy('name')
+            ->get();
+
+        $allRoutes = Cache::remember('map.all_routes', 600, function () {
+            return TransitRoute::with('stops')
+                ->where('status', 'published')
+                ->get();
+        });
+
+        $cities->each(function ($city) use ($allRoutes) {
+            $cacheKey = "map.city.{$city->id}.nearby";
+
+            $nearbyCount = Cache::remember($cacheKey, 600, function () use ($city, $allRoutes) {
+                $otherRoutes = $allRoutes->where('city_id', '!=', $city->id);
+
+                return $otherRoutes->filter(function ($route) use ($city) {
+                    return $route->passesNear($city->latitude, $city->longitude, 10);
+                })->count();
+            });
+
+            $city->nearby_routes_count = $nearbyCount;
+        });
+
+        return view('map.index', compact('cities'));
     }
 
     public function index(Request $request)
@@ -71,6 +102,11 @@ class CityController extends Controller
         }
 
         $city = City::create($validated);
+
+        Cache::forget('map.all_routes');
+        foreach (City::pluck('id') as $cid) {
+            Cache::forget("map.city.{$cid}.nearby");
+        }
 
         return redirect()->route('cities.show', $city)
             ->with('success', 'Ciudad registrada exitosamente. ¡Ya puedes comenzar a agregar rutas!');

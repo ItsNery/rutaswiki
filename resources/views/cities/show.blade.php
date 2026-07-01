@@ -1,47 +1,91 @@
 <x-app-layout>
+    @push('meta')
+        <meta property="og:title" content="{{ $city->name }}, {{ $city->state }}">
+        <meta property="og:description" content="{{ $city->transitRoutes->count() }} rutas de transporte público registradas en {{ $city->name }}, {{ $city->state }}. Explora el mapa interactivo en RutasWiki.">
+        <meta property="og:url" content="{{ route('cities.show', $city) }}">
+        <meta name="description" content="{{ $city->transitRoutes->count() }} rutas de transporte público registradas en {{ $city->name }}, {{ $city->state }}.">
+    @endpush
+    @section('title', $city->name . ' · Rutas de transporte')
     @push('styles')
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
         <style>
             #map {
-                height: calc(100vh - 4rem); /* Full height minus header */
+                height: calc(100vh - 4rem);
             }
             .sidebar-height {
                 height: calc(100vh - 4rem);
             }
+            @media (max-width: 767px) {
+                #map {
+                    height: calc(100vh - 4rem);
+                }
+                .sidebar-mobile {
+                    position: fixed;
+                    top: 4rem;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    z-index: 50;
+                    width: 100% !important;
+                    height: calc(100vh - 4rem) !important;
+                    transition: transform 0.25s ease-in-out;
+                }
+                .sidebar-mobile.hidden {
+                    transform: translateX(-100%);
+                }
+                .sidebar-backdrop {
+                    position: fixed;
+                    inset: 0;
+                    top: 4rem;
+                    background: rgba(0,0,0,0.4);
+                    z-index: 40;
+                }
+            }
         </style>
     @endpush
 
-    <div class="flex flex-col md:flex-row min-h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden">
+    <div class="flex flex-col md:flex-row min-h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden"
+         x-data="{ 
+            mobileSidebarOpen: false,
+            search: '',
+            typeFilter: 'all',
+            routes: [],
+            loading: true,
+            init() {
+                fetch('{{ route('api.routes.index', $city) }}')
+                    .then(res => res.json())
+                    .then(data => {
+                        this.routes = data.features || [];
+                        this.loading = false;
+                        initMap(data);
+                    });
+            },
+            get filteredRoutes() {
+                return this.routes.filter(r => {
+                    const matchesSearch = r.properties.name.toLowerCase().includes(this.search.toLowerCase()) || 
+                                          (r.properties.route_number && r.properties.route_number.includes(this.search));
+                    const matchesType = this.typeFilter === 'all' || r.properties.transport_type === this.typeFilter;
+                    return matchesSearch && matchesType;
+                });
+            },
+            selectRoute(routeId) {
+                highlightRouteOnMap(routeId);
+                if (window.innerWidth < 768) {
+                    this.mobileSidebarOpen = false;
+                }
+            },
+            toggleSidebar() {
+                this.mobileSidebarOpen = !this.mobileSidebarOpen;
+            }
+         }">
         
+        <!-- Mobile backdrop -->
+        <div x-show="mobileSidebarOpen" class="sidebar-backdrop md:hidden" @click="mobileSidebarOpen = false" x-cloak></div>
+
         <!-- Sidebar -->
         <div class="w-full md:w-96 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col sidebar-height shadow-lg z-10"
-             x-data="{ 
-                search: '',
-                typeFilter: 'all',
-                routes: [],
-                loading: true,
-                init() {
-                    fetch('{{ route('api.routes.index', $city) }}')
-                        .then(res => res.json())
-                        .then(data => {
-                            this.routes = data.features || [];
-                            this.loading = false;
-                            initMap(data);
-                        });
-                },
-                get filteredRoutes() {
-                    return this.routes.filter(r => {
-                        const matchesSearch = r.properties.name.toLowerCase().includes(this.search.toLowerCase()) || 
-                                              (r.properties.route_number && r.properties.route_number.includes(this.search));
-                        const matchesType = this.typeFilter === 'all' || r.properties.transport_type === this.typeFilter;
-                        return matchesSearch && matchesType;
-                    });
-                },
-                selectRoute(routeId) {
-                    highlightRouteOnMap(routeId);
-                }
-             }">
-            
+             :class="mobileSidebarOpen ? 'sidebar-mobile' : 'sidebar-mobile hidden'">
+
             <!-- Sidebar Header -->
             <div class="p-6 border-b border-gray-200 dark:border-gray-700">
                 <div class="flex items-center justify-between mb-4">
@@ -126,6 +170,13 @@
 
         <!-- Map Container -->
         <div class="flex-1 relative">
+            <!-- Mobile toggle button -->
+            <button @click="toggleSidebar()" 
+                    class="md:hidden absolute top-3 left-3 z-20 w-10 h-10 bg-white dark:bg-gray-800 rounded-full shadow-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition focus:outline-none"
+                    title="Mostrar lista de rutas">
+                <svg x-show="!mobileSidebarOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                <svg x-show="mobileSidebarOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></svg>
+            </button>
             <div id="map"></div>
         </div>
     </div>

@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\CityController;
+use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SitemapController;
 use App\Http\Controllers\TransitRouteController;
 use App\Http\Controllers\VoteController;
 use App\Http\Controllers\CommentController;
@@ -9,11 +11,15 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [CityController::class, 'home'])->name('home');
+Route::get('/search', [SearchController::class, 'index'])->name('search');
+Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('sitemap');
 Route::get('/cities', [CityController::class, 'index'])->name('cities.index');
+Route::get('/map', [CityController::class, 'map'])->name('map');
 Route::get('/cities/create', [CityController::class, 'create'])->middleware(['auth', 'verified'])->name('cities.create');
 Route::post('/cities', [CityController::class, 'store'])->middleware(['auth', 'verified'])->name('cities.store');
 Route::get('/cities/{city}', [CityController::class, 'show'])->name('cities.show');
 // API Routes (public)
+Route::get('/api/routes/search', [RouteApiController::class, 'search'])->name('api.routes.search');
 Route::get('/api/cities/{city}/routes', [RouteApiController::class, 'index'])->name('api.routes.index');
 Route::get('/api/routes/{route}', [RouteApiController::class, 'show'])->name('api.routes.show');
 Route::get('/api/nearby-routes', [RouteApiController::class, 'nearby'])->name('api.routes.nearby');

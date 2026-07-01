@@ -9,6 +9,7 @@ use App\Models\RouteRevision;
 use App\Models\Stop;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class TransitRouteController extends Controller
 {
@@ -76,8 +77,21 @@ class TransitRouteController extends Controller
             }
         });
 
+        $route = $city->transitRoutes()->latest()->first();
+        if ($route) {
+            $this->clearRouteCache($route);
+        }
+
         return redirect()->route('cities.show', $city)
             ->with('success', 'Ruta creada exitosamente.');
+    }
+
+    private function clearRouteCache(TransitRoute $route): void
+    {
+        Cache::forget("api.city.{$route->city_id}.routes");
+        Cache::forget("api.route.{$route->id}");
+        Cache::forget('map.all_routes');
+        Cache::forget("map.city.{$route->city_id}.nearby");
     }
 
     public function show(City $city, TransitRoute $route)
@@ -179,6 +193,8 @@ class TransitRouteController extends Controller
                 }
             }
         });
+
+        $this->clearRouteCache($route);
 
         return redirect()->route('routes.show', [$city, $route])
             ->with('success', 'Ruta actualizada exitosamente.');
