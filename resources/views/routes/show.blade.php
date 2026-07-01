@@ -45,7 +45,7 @@
                     return;
                 @endguest
 
-                const response = await fetch('{{ route('routes.vote', $route->id) }}', {
+                const response = await fetch('{{ route('routes.vote', $route) }}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -347,7 +347,7 @@
 
                 <!-- Comment submission -->
                 @auth
-                    <form action="{{ route('routes.comment', $route->id) }}" method="POST" class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm p-4 shadow-sm">
+                    <form action="{{ route('routes.comment', $route) }}" method="POST" class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm p-4 shadow-sm">
                         @csrf
                         <div>
                             <label for="body" class="block text-sm font-bold text-gray-900 dark:text-white">Agregar nuevo tema de discusión</label>
@@ -403,7 +403,7 @@
                     attribution: '© OSM'
                 }).addTo(map);
 
-                fetch('{{ route('api.routes.show', $route->id) }}')
+                fetch('{{ route('api.routes.show', $route) }}')
                     .then(res => res.json())
                     .then(routeData => {
                         const polyline = L.geoJSON(routeData.geometry, {

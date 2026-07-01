@@ -14,6 +14,7 @@ class TransitRoute extends Model
         'user_id',
         'route_number',
         'name',
+        'slug',
         'description',
         'transport_type',
         'geometry',
@@ -26,6 +27,29 @@ class TransitRoute extends Model
     protected $casts = [
         'geometry' => 'array',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($route) {
+            $slug = \Illuminate\Support\Str::slug($route->name);
+            if (empty($slug)) {
+                $slug = 'ruta';
+            }
+            $originalSlug = $slug;
+            $count = 1;
+            while (static::where('slug', $slug)->exists()) {
+                $slug = $originalSlug . '-' . $count++;
+            }
+            $route->slug = $slug;
+        });
+    }
+
+    public function getRouteKeyName(): string
+    {
+        return 'slug';
+    }
 
     public function city(): BelongsTo
     {
