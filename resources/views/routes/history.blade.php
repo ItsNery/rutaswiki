@@ -38,11 +38,17 @@
                         <li class="text-gray-600 dark:text-gray-400">
                             <!-- Revision details in Wikipedia style line -->
                             <span class="text-xs text-gray-400 dark:text-gray-500 font-mono">
-                                (actual) (prev) . .
+                                <a href="{{ route('routes.history.diff', [$city, $route, $revision]) }}?against=current" class="text-blue-600 dark:text-blue-400 hover:underline" title="Comparar con la versión actual">act</a>
+                                @if(!$loop->last)
+                                    <a href="{{ route('routes.history.diff', [$city, $route, $revision]) }}?against={{ $revisions[$loop->index + 1]->id }}" class="text-blue-600 dark:text-blue-400 hover:underline" title="Comparar con la versión anterior">prev</a>
+                                @else
+                                    <span class="text-gray-400">prev</span>
+                                @endif
+                                . .
                             </span>
-                            <span class="font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                            <a href="{{ route('routes.history.diff', [$city, $route, $revision]) }}" class="font-semibold text-blue-600 dark:text-blue-400 hover:underline">
                                 {{ $revision->created_at->format('d M Y, H:i') }}
-                            </span>
+                            </a>
                             <span class="text-gray-400 font-normal">. .</span>
                             <strong class="text-gray-900 dark:text-white font-semibold">
                                 {{ $revision->user?->name ?? 'Anónimo' }}

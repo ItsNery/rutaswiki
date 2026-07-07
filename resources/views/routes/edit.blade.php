@@ -70,6 +70,8 @@
                         
                         <!-- Hidden fields for Leaflet data -->
                         <input type="hidden" name="geometry" :value="JSON.stringify(geometry)">
+                        <input type="hidden" name="geometry_return" :value="JSON.stringify(geometryReturn)">
+                        <input type="hidden" name="round_trip" :value="roundTrip ? '1' : ''">
                         <template x-for="(stop, index) in stops" :key="index">
                             <div>
                                 <input type="hidden" :name="'stops[' + index + '][name]'" :value="stop.name">
@@ -148,6 +150,99 @@
                                 </div>
                             </div>
 
+                            <!-- Round Trip Toggle -->
+                            <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" x-model="roundTrip" @change="onRoundTripChange()"
+                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:bg-gray-750">
+                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">El regreso <strong>no</strong> es por el mismo camino</span>
+                                </label>
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-6">
+                                    Activa esta opción si la vuelta pasa por calles diferentes.
+                                </p>
+
+                                <div x-show="roundTrip" x-transition class="mt-3 flex gap-2">
+                                    <button type="button" @click="editingMode = 'outbound'; updateLineColor()"
+                                            :class="editingMode === 'outbound' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'"
+                                            class="px-3 py-1.5 text-xs font-bold rounded-sm transition flex-1 text-center">
+                                        Ida
+                                    </button>
+                                    <button type="button" @click="editingMode = 'return'; updateLineColor()"
+                                            :class="editingMode === 'return' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'"
+                                            class="px-3 py-1.5 text-xs font-bold rounded-sm transition flex-1 text-center">
+                                        Vuelta
+                                    </button>
+                                </div>
+                                <div x-show="roundTrip" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                    <span x-show="editingMode === 'outbound'">Dibujando: <strong>Ida</strong> (línea sólida)</span>
+                                    <span x-show="editingMode === 'return'">Dibujando: <strong>Vuelta</strong> (línea punteada)</span>
+                                </div>
+                            </div>
+
+                            <!-- Has Designated Stops -->
+                            <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" x-model="hasDesignatedStops"
+                                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:bg-gray-750">
+                                    <input type="hidden" name="has_designated_stops" :value="hasDesignatedStops ? '1' : '0'">
+                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Tiene paradas designadas</span>
+                                </label>
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-6">
+                                    Si está activada, la ruta solo se detiene en las paradas marcadas. Si no, para en cualquier punto del recorrido.
+                                </p>
+                            </div>
+
+                            <!-- Additional cities -->
+                            <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Ciudades adicionales</label>
+                                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 mb-2">
+                                    Si esta ruta también pasa por otras ciudades, selecciónalas aquí.
+                                </p>
+                                <select name="additional_cities[]" multiple x-ref="citySelect"
+                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:text-white dark:border-gray-600 text-sm"
+                                        size="5">
+                                    @foreach($cities as $c)
+                                        <option value="{{ $c->id }}"
+                                            {{ $c->id === $city->id ? 'disabled' : '' }}>
+                                            {{ $c->name }}{{ $c->id === $city->id ? ' (principal)' : '' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                <div class="mt-2">
+                                    <template x-if="!geometry">
+                                        <p class="text-xs text-gray-400">Dibuja la ruta en el mapa para sugerir ciudades cercanas.</p>
+                                    </template>
+                                    <template x-if="geometry">
+                                        <div>
+                                            <button type="button" @click="fetchSuggestions()"
+                                                    class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                                <i class="fa-solid fa-magnifying-glass"></i>
+                                                <span x-text="loadingSuggestions ? 'Buscando...' : ' Buscar lugares cercanos'"></span>
+                                            </button>
+                                            <div x-show="loadingSuggestions" class="text-xs text-gray-400 mt-1">
+                                                <span class="animate-pulse">Consultando OpenStreetMap...</span>
+                                            </div>
+                                            <div x-show="suggestedPlaces !== null && !loadingSuggestions" class="mt-1 space-y-1">
+                                                <template x-if="suggestedPlaces !== null && suggestedPlaces.length === 0">
+                                                    <p class="text-xs text-gray-400">No se encontraron lugares nuevos cerca.</p>
+                                                </template>
+                                                <template x-for="place in suggestedPlaces" :key="place.name">
+                                                    <div class="flex items-center justify-between py-1 px-2 bg-gray-50 dark:bg-gray-800 rounded text-xs">
+                                                        <span x-text="place.name"></span>
+                                                        <span class="text-gray-400 ml-1" x-text="'(' + place.distance_km + ' km)'"></span>
+                                                        <button type="button" @click="addSuggestedPlace(place)"
+                                                                class="text-green-600 hover:text-green-800 font-medium ml-2 whitespace-nowrap">
+                                                            <i class="fa-solid fa-plus"></i> Asociar
+                                                        </button>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
                             <!-- Horarios y Frecuencias -->
                             <div class="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
                                 <h3 class="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1 font-serif">
@@ -203,19 +298,32 @@
                             </div>
 
                             <!-- Stops list -->
-                            <div>
+                            <div x-show="hasDesignatedStops || stops.length > 0">
                                 <div class="flex justify-between items-center mb-2">
                                     <span class="block text-sm font-semibold text-gray-700 dark:text-gray-300">Paradas agregadas (<span x-text="stops.length"></span>)</span>
                                 </div>
+                                <template x-if="!hasDesignatedStops && stops.length > 0">
+                                    <div class="mb-2 p-2 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-300 dark:border-yellow-700 rounded text-xs text-yellow-800 dark:text-yellow-200">
+                                        Esta ruta no tiene paradas designadas. Los pasajeros pueden solicitar paradas adicionales directamente al conductor con anticipación.
+                                    </div>
+                                </template>
                                 <div class="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 rounded-md p-2">
                                     <template x-if="stops.length === 0">
                                         <p class="text-xs text-gray-400 text-center py-4">Haz click en el botón "Parada" en el mapa y colócala.</p>
                                     </template>
                                     <template x-for="(stop, index) in stops" :key="index">
-                                        <div class="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-900 p-2 rounded">
+                                        <div draggable="true"
+                                             @dragstart="dragStart(index)"
+                                             @dragover.prevent
+                                             @dragenter="dragEnter(index)"
+                                             @drop="dropStop(index)"
+                                             @dragend="dragEnd()"
+                                             :class="{'ring-2 ring-blue-400': dragOverIndex === index}"
+                                             class="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-900 p-2 rounded cursor-grab active:cursor-grabbing">
                                             <div class="flex-1 min-w-0 pr-2">
                                                 <input type="text" x-model="stop.name" class="font-semibold text-gray-800 dark:text-white bg-transparent border-0 p-0 focus:ring-0 focus:border-blue-500 w-full" placeholder="Nombre de parada">
-                                                <p class="text-[10px] text-gray-400 dark:text-gray-500 truncate" x-text="'Lat: ' + stop.latitude.toFixed(4) + ' Lng: ' + stop.longitude.toFixed(4)"></p>
+                                                <input type="text" x-model="stop.description" class="text-gray-500 dark:text-gray-400 bg-transparent border-0 p-0 focus:ring-0 focus:border-blue-500 w-full mt-0.5 text-[10px]" placeholder="Comentario (opcional)">
+                                                <p class="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5" x-text="'Lat: ' + Number(stop.latitude).toFixed(4) + ' Lng: ' + Number(stop.longitude).toFixed(4)"></p>
                                             </div>
                                             <button type="button" @click="removeStop(index)" class="text-red-500 hover:text-red-700">
                                                 Eliminar
@@ -241,6 +349,10 @@
                             <div>
                                 <h2 class="text-lg font-semibold text-gray-950 dark:text-white font-bold">Lienzo del Mapa</h2>
                                 <p class="text-xs text-gray-500 mt-1">Usa los controles para editar el trazo existente o colocar nuevas paradas.</p>
+                                <div class="text-xs text-amber-600 dark:text-amber-400 mt-1 space-y-0.5">
+                                    <p>• <strong>Editar vértices:</strong> haz clic en <kbd class="px-1 bg-gray-200 dark:bg-gray-700 rounded font-mono text-[10px]">✎</kbd> y arrastra los puntos blancos del trazo.</p>
+                                    <p>• <strong>Añadir parada:</strong> haz clic en <kbd class="px-1 bg-gray-200 dark:bg-gray-700 rounded font-mono text-[10px]">⬤</kbd> <em>Marker</em> y colócalo en el mapa.</p>
+                                </div>
                             </div>
                             <span class="text-xs bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full dark:bg-amber-900/50 dark:text-amber-300 font-semibold">Modo Edición Wiki</span>
                         </div>
@@ -276,6 +388,13 @@
                                placeholder="Ej. Entrada Principal, Cruce del Río">
                     </div>
 
+                    <div>
+                        <label for="modal_stop_description" class="block text-xs font-semibold text-gray-750 dark:text-gray-300 uppercase tracking-wider">Comentario / Descripción</label>
+                        <textarea id="modal_stop_description" x-model="newStopDescription"
+                                  class="mt-1.5 block w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors shadow-inner"
+                                  placeholder="Ej. La parada está frente al mercado" rows="2"></textarea>
+                    </div>
+
                     <div class="pt-2 flex justify-end gap-3">
                         <button type="button" @click="cancelStop()"
                                 class="px-4 py-2 border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750 text-gray-700 dark:text-gray-300 rounded-sm text-xs font-bold transition">
@@ -294,6 +413,8 @@
     @push('scripts')
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/leaflet-geometryutil@0.10.2/src/leaflet.geometryutil.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/leaflet-snap@0.0.4/leaflet.snap.js"></script>
         <script>
             function routeEditor() {
                 return {
@@ -305,12 +426,23 @@
                         color: @json($route->color)
                     },
                     change_summary: '',
-                    geometry: @json($route->geometry), 
+                    geometry: @json($route->geometry),
+                    geometryReturn: @json($route->geometry_return),
+                    roundTrip: {{ $route->round_trip ? 'true' : 'false' }},
+                    hasDesignatedStops: {{ $route->has_designated_stops ? 'true' : 'false' }},
+                    editingMode: 'outbound',
                     stops: [],
                     showStopModal: false,
                     newStopLatLng: null,
                     newStopLayer: null,
                     newStopName: '',
+                    newStopDescription: '',
+                    draggedIndex: null,
+                    dragOverIndex: null,
+                    tselect: null,
+                    allCitiesData: @json($cities),
+                    suggestedPlaces: null,
+                    loadingSuggestions: false,
 
                     draftSaved: false,
                     draftAvailable: false,
@@ -363,6 +495,7 @@
                     init() {
                         this.$nextTick(() => {
                             this.initMap();
+                            this.initTomSelect();
                             this.checkDraft();
                             this.fetchAllTimetables();
                             setInterval(() => this.saveDraft(), 5000);
@@ -388,20 +521,33 @@
                             }
                         });
                         
-                        let polylineLayer;
                         existingPolyline.eachLayer((layer) => {
-                            polylineLayer = layer;
                             this.drawnItems.addLayer(layer);
                         });
 
+                        // Draw existing return polyline
+                        let fitBoundsItems = [];
+                        if (this.geometry && existingPolyline.getLayers().length > 0) {
+                            fitBoundsItems.push(existingPolyline.getLayers()[0]);
+                        }
+                        if (this.geometryReturn && this.roundTrip) {
+                            let existingReturn = L.geoJSON(this.geometryReturn, {
+                                style: { color: this.form.color, weight: 5, dashArray: '8, 8', opacity: 0.7 }
+                            });
+                            existingReturn.eachLayer((layer) => {
+                                layer._isReturn = true;
+                                this.drawnItems.addLayer(layer);
+                                fitBoundsItems.push(layer);
+                            });
+                        }
+
                         // Draw existing stops
                         let initialStops = @json($route->stops);
-                        let fitBoundsGroup = L.featureGroup([polylineLayer]);
 
                         initialStops.forEach((stop) => {
                             let marker = L.marker([stop.latitude, stop.longitude]).bindPopup(`<b>${stop.name}</b>`);
                             this.drawnItems.addLayer(marker);
-                            fitBoundsGroup.addLayer(marker);
+                            fitBoundsItems.push(marker);
 
                             let stopObj = {
                                 name: stop.name,
@@ -414,7 +560,12 @@
                         });
 
                         // Fit map view to existing route
-                        this.map.fitBounds(fitBoundsGroup.getBounds(), { padding: [50, 50] });
+                        if (fitBoundsItems.length > 0) {
+                            this.map.fitBounds(L.featureGroup(fitBoundsItems).getBounds(), { padding: [50, 50] });
+                        }
+
+                        // Suggest cities for existing geometry
+                        this.suggestCities();
 
                         // Configure leaflet draw options
                         this.drawControl = new L.Control.Draw({
@@ -437,6 +588,7 @@
                             }
                         });
                         this.map.addControl(this.drawControl);
+                        this.setupSnapGuides();
 
                         // Event handler for draw creations
                         this.map.on(L.Draw.Event.CREATED, (e) => {
@@ -444,15 +596,26 @@
                             let layer = e.layer;
 
                             if (type === 'polyline') {
-                                // Clear existing polylines
-                                this.drawnItems.eachLayer((existingLayer) => {
-                                    if (existingLayer instanceof L.Polyline && !(existingLayer instanceof L.Marker)) {
-                                        this.drawnItems.removeLayer(existingLayer);
-                                    }
-                                });
+                                if (this.editingMode === 'return' && this.roundTrip) {
+                                    layer._isReturn = true;
+                                    layer.setStyle({ color: this.form.color, dashArray: '8, 8', opacity: 0.7 });
+                                } else {
+                                    // Clear existing outbound line
+                                    this.drawnItems.eachLayer((existingLayer) => {
+                                        if (existingLayer instanceof L.Polyline && !(existingLayer instanceof L.Marker) && !existingLayer._isReturn) {
+                                            this.drawnItems.removeLayer(existingLayer);
+                                        }
+                                    });
+                                }
 
                                 this.drawnItems.addLayer(layer);
-                                this.updateGeometry(layer);
+                                if (layer._isReturn) {
+                                    this.geometryReturn = this.buildReturnGeometry();
+                                } else {
+                                    this.updateGeometry(layer);
+                                    this.suggestCities();
+                                    this.setupSnapGuides();
+                                }
                                 this.saveDraft();
                             } else if (type === 'marker') {
                                 this.newStopLatLng = layer.getLatLng();
@@ -466,7 +629,13 @@
                         this.map.on(L.Draw.Event.EDITED, (e) => {
                             e.layers.eachLayer((layer) => {
                                 if (layer instanceof L.Polyline && !(layer instanceof L.Marker)) {
-                                    this.updateGeometry(layer);
+                                    if (layer._isReturn) {
+                                        this.geometryReturn = this.buildReturnGeometry();
+                                    } else {
+                                        this.updateGeometry(layer);
+                                        this.suggestCities();
+                                        this.setupSnapGuides();
+                                    }
                                 } else if (layer instanceof L.Marker) {
                                     let stampId = L.stamp(layer);
                                     let stop = this.stops.find(s => s._layerId === stampId);
@@ -484,7 +653,13 @@
                         this.map.on(L.Draw.Event.DELETED, (e) => {
                             e.layers.eachLayer((layer) => {
                                 if (layer instanceof L.Polyline && !(layer instanceof L.Marker)) {
-                                    this.geometry = null;
+                                    if (layer._isReturn) {
+                                        this.geometryReturn = this.buildReturnGeometry();
+                                    } else {
+                                        this.geometry = null;
+                                        this.suggestCities();
+                                        this.setupSnapGuides();
+                                    }
                                 } else if (layer instanceof L.Marker) {
                                     let stampId = L.stamp(layer);
                                     this.stops = this.stops.filter(s => s._layerId !== stampId);
@@ -494,22 +669,179 @@
                         });
                     },
 
+                    initTomSelect() {
+                        const el = this.$refs.citySelect;
+                        if (!el) return;
+                        const initialIds = @json($additionalCityIds).map(String);
+                        this.tselect = new TomSelect(el, {
+                            items: initialIds,
+                            create: true,
+                            createOnBlur: false,
+                            placeholder: 'Selecciona o escribe ciudades...',
+                            maxItems: null,
+                            persist: false,
+                            render: {
+                                option_create: (data, escape) =>
+                                    `<div class="create text-green-600 font-medium"><i class="fa-solid fa-plus"></i> Crear: <strong>${escape(data.input)}</strong></div>`
+                            }
+                        });
+                    },
+
                     updateGeometry(layer) {
                         let latlngs = layer.getLatLngs();
                         let coordinates = latlngs.map(latlng => [latlng.lng, latlng.lat]);
-                        
-                        this.geometry = {
-                            type: 'LineString',
-                            coordinates: coordinates
-                        };
+
+                        if (layer._isReturn) {
+                            let existing = this.geometryReturn?.coordinates || [];
+                            this.geometryReturn = {
+                                type: 'MultiLineString',
+                                coordinates: [...existing, coordinates]
+                            };
+                        } else {
+                            this.geometry = {
+                                type: 'LineString',
+                                coordinates: coordinates
+                            };
+                        }
+                    },
+
+                    onRoundTripChange() {
+                        if (!this.roundTrip) {
+                            this.geometryReturn = null;
+                            this.editingMode = 'outbound';
+                            this.removeReturnLine();
+                        }
+                        this.updateLineColor();
+                        this.saveDraft();
+                    },
+
+                    removeReturnLine() {
+                        if (!this.drawnItems) return;
+                        this.drawnItems.eachLayer((layer) => {
+                            if (layer._isReturn) {
+                                this.drawnItems.removeLayer(layer);
+                            }
+                        });
+                    },
+
+                    setupSnapGuides() {
+                        if (!this.drawControl) return;
+                        let guides = [];
+                        this.drawnItems.eachLayer((layer) => {
+                            if (layer instanceof L.Polyline && !(layer instanceof L.Marker) && !layer._isReturn) {
+                                guides.push(layer);
+                            }
+                        });
+                        this.map.drawControl.setDrawingOptions({
+                            polyline: {
+                                guideLayers: guides.length > 0 ? guides : undefined,
+                                snapDistance: 15
+                            }
+                        });
+                    },
+
+                    buildReturnGeometry() {
+                        let coords = [];
+                        this.drawnItems.eachLayer((layer) => {
+                            if (layer instanceof L.Polyline && !(layer instanceof L.Marker) && layer._isReturn) {
+                                let latlngs = layer.getLatLngs();
+                                coords.push(latlngs.map(ll => [ll.lng, ll.lat]));
+                            }
+                        });
+                        if (coords.length === 0) return null;
+                        if (coords.length === 1) return { type: 'LineString', coordinates: coords[0] };
+                        return { type: 'MultiLineString', coordinates: coords };
+                    },
+
+                    haversineKm(lat1, lng1, lat2, lng2) {
+                        const R = 6371;
+                        const dLat = (lat2 - lat1) * Math.PI / 180;
+                        const dLng = (lng2 - lng1) * Math.PI / 180;
+                        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+                        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                    },
+
+                    suggestCities() {
+                        this.suggestedPlaces = null;
+                        const coords = this.geometry?.coordinates;
+                        let allCoords = [];
+                        if (coords) allCoords.push(...coords);
+                        const returnGeo = this.geometryReturn;
+                        if (returnGeo && this.roundTrip) {
+                            if (returnGeo.type === 'MultiLineString') {
+                                returnGeo.coordinates.forEach(seg => allCoords.push(...seg));
+                            } else if (returnGeo.type === 'LineString') {
+                                allCoords.push(...returnGeo.coordinates);
+                            }
+                        }
+                        if (allCoords.length === 0) return;
+                        const threshold = 8;
+                        const suggested = new Set();
+                        for (const city of this.allCitiesData) {
+                            if (city.id === @json($city->id)) continue;
+                            for (const [lng, lat] of allCoords) {
+                                if (this.haversineKm(lat, lng, city.latitude, city.longitude) < threshold) {
+                                    suggested.add(String(city.id));
+                                    break;
+                                }
+                            }
+                        }
+                        if (this.tselect) {
+                            const existing = new Set(this.tselect.getValue());
+                            for (const id of suggested) existing.add(id);
+                            this.tselect.setValue(Array.from(existing));
+                        }
                     },
 
                     updateLineColor() {
                         this.drawnItems.eachLayer((layer) => {
                             if (layer instanceof L.Polyline && !(layer instanceof L.Marker)) {
-                                layer.setStyle({ color: this.form.color });
+                                if (layer._isReturn) {
+                                    layer.setStyle({ color: this.form.color, dashArray: '8, 8', opacity: 0.7 });
+                                } else {
+                                    layer.setStyle({ color: this.form.color, weight: 5 });
+                                }
                             }
                         });
+                    },
+
+                    fetchSuggestions() {
+                        let allCoords = [];
+
+                        const outbound = this.geometry?.coordinates;
+                        if (outbound) allCoords.push(...outbound);
+
+                        const returnGeo = this.geometryReturn;
+                        if (returnGeo && this.roundTrip) {
+                            if (returnGeo.type === 'MultiLineString') {
+                                returnGeo.coordinates.forEach(seg => allCoords.push(...seg));
+                            } else if (returnGeo.type === 'LineString') {
+                                allCoords.push(...returnGeo.coordinates);
+                            }
+                        }
+
+                        if (allCoords.length < 2) return;
+                        this.loadingSuggestions = true;
+                        this.suggestedPlaces = null;
+                        fetch('/api/suggest-places', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                            body: JSON.stringify({ coordinates: allCoords })
+                        })
+                        .then(r => r.json())
+                        .then(data => {
+                            this.suggestedPlaces = Array.isArray(data) ? data : [];
+                        })
+                        .catch(() => { this.suggestedPlaces = []; })
+                        .finally(() => { this.loadingSuggestions = false; });
+                    },
+
+                    addSuggestedPlace(place) {
+                        if (!this.tselect) return;
+                        if (!this.tselect.options[place.name]) {
+                            this.tselect.addOption({ value: place.name, text: place.name });
+                        }
+                        this.tselect.addItem(place.name);
                     },
 
                     removeStop(index) {
@@ -539,7 +871,7 @@
                             name: stopName,
                             latitude: latlng.lat,
                             longitude: latlng.lng,
-                            description: '',
+                            description: this.newStopDescription,
                             _layerId: L.stamp(layer)
                         };
                         this.stops.push(stopObj);
@@ -562,16 +894,31 @@
                         this.newStopLatLng = null;
                         this.newStopLayer = null;
                         this.newStopName = '';
+                        this.newStopDescription = '';
                     },
 
+                    dragStart(index) { this.draggedIndex = index; },
+                    dragEnter(index) { if (this.draggedIndex !== null && this.draggedIndex !== index) this.dragOverIndex = index; },
+                    dropStop(index) {
+                        if (this.draggedIndex === null) return;
+                        const item = this.stops.splice(this.draggedIndex, 1)[0];
+                        this.stops.splice(index, 0, item);
+                        this.dragEnd();
+                        this.saveDraft();
+                    },
+                    dragEnd() { this.draggedIndex = null; this.dragOverIndex = null; },
+
                     saveDraft() {
-                        if (!this.draftRestored && !this.geometry && this.stops.length === 0 && !this.form.name) {
+                        if (!this.draftRestored && !this.geometry && !this.geometryReturn && this.stops.length === 0 && !this.form.name) {
                             return;
                         }
                         const data = {
                             form: this.form,
                             change_summary: this.change_summary,
                             geometry: this.geometry,
+                            geometryReturn: this.geometryReturn,
+                            roundTrip: this.roundTrip,
+                            editingMode: this.editingMode,
                             stops: this.stops.map(s => ({ name: s.name, latitude: s.latitude, longitude: s.longitude, description: s.description })),
                             schedules: this.schedules.map(s => ({ day_type: s.day_type, is_active: s.is_active, start_time: s.start_time, end_time: s.end_time, frequency_minutes: s.frequency_minutes })),
                             savedAt: new Date().toISOString()
@@ -589,7 +936,7 @@
                             if (age > 86400000) { this.clearDraft(); return; }
                             const mins = Math.round(age / 60000);
                             this.draftAge = mins < 1 ? 'hace segundos' : mins < 60 ? `hace ${mins} min` : `hace ${Math.round(mins/60)}h`;
-                            if (data.geometry || data.stops.length > 0) {
+                            if (data.geometry || data.geometryReturn || data.stops.length > 0) {
                                 this.draftAvailable = true;
                                 this._draftData = data;
                             }
@@ -602,6 +949,9 @@
                         this.form = data.form;
                         this.change_summary = data.change_summary || '';
                         this.schedules = data.schedules;
+                        this.roundTrip = data.roundTrip || false;
+                        this.editingMode = data.editingMode || 'outbound';
+                        this.geometryReturn = data.geometryReturn || null;
                         this.draftRestored = true;
                         this.draftAvailable = false;
                         this.$nextTick(() => {
@@ -614,6 +964,12 @@
                                 geojson.eachLayer(layer => { this.drawnItems.addLayer(layer); });
                                 this.geometry = data.geometry;
                             }
+                            if (data.geometryReturn && data.roundTrip) {
+                                const returnGeo = L.geoJSON(data.geometryReturn, {
+                                    style: { color: this.form.color, weight: 5, dashArray: '8, 8', opacity: 0.7 }
+                                });
+                                returnGeo.eachLayer(layer => { layer._isReturn = true; this.drawnItems.addLayer(layer); });
+                            }
                             if (data.stops && data.stops.length > 0) {
                                 data.stops.forEach(s => {
                                     const marker = L.marker([s.latitude, s.longitude]).bindPopup(`<b>${s.name}</b>`);
@@ -621,10 +977,8 @@
                                     this.stops.push({ ...s, _layerId: L.stamp(marker) });
                                 });
                             }
-                            if (this.geometry) {
-                                let bounds = this.drawnItems.getBounds();
-                                if (bounds.isValid()) this.map.fitBounds(bounds, { padding: [50, 50] });
-                            }
+                            let bounds = this.drawnItems.getBounds();
+                            if (bounds.isValid()) this.map.fitBounds(bounds, { padding: [50, 50] });
                         });
                     },
 
@@ -674,7 +1028,11 @@
 
                     submitForm() {
                         if (!this.geometry) {
-                            alert("Por favor dibuja la ruta (línea) en el mapa antes de guardar.");
+                            alert("Por favor dibuja la ruta de ida en el mapa antes de guardar.");
+                            return;
+                        }
+                        if (this.roundTrip && !this.geometryReturn) {
+                            alert("Marcaste que el regreso es diferente, pero no dibujaste la ruta de vuelta. Cambia a modo 'Vuelta' y dibújala.");
                             return;
                         }
 

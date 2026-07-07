@@ -12,12 +12,14 @@ class RouteRevision extends Model
         'transit_route_id',
         'user_id',
         'geometry',
+        'geometry_return',
         'stops_snapshot',
         'change_summary',
     ];
 
     protected $casts = [
         'geometry' => 'array',
+        'geometry_return' => 'array',
         'stops_snapshot' => 'array',
     ];
 

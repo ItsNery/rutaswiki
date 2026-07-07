@@ -41,6 +41,11 @@
                     z-index: 40;
                 }
             }
+            @media (min-width: 768px) {
+                .sidebar-mobile {
+                    display: flex !important;
+                }
+            }
         </style>
     @endpush
 
@@ -51,14 +56,47 @@
             typeFilter: 'all',
             routes: [],
             loading: true,
+            loadingMore: false,
+            page: 1,
+            lastPage: 1,
+            hasMore: false,
             init() {
-                fetch('{{ route('api.routes.index', $city) }}')
-                    .then(res => res.json())
+                this.loadRoutes(1);
+            },
+            loadRoutes(page) {
+                if (page === 1) {
+                    this.loading = true;
+                } else {
+                    this.loadingMore = true;
+                }
+                let url = '{{ route('api.routes.index', $city) }}?page=' + page + '&per_page=50';
+                fetch(url)
+                    .then(res => {
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        return res.json();
+                    })
                     .then(data => {
-                        this.routes = data.features || [];
+                        if (page === 1) {
+                            this.routes = data.features || [];
+                            initMap(data);
+                        } else {
+                            this.routes = this.routes.concat(data.features || []);
+                            addRoutesToMap(data);
+                        }
+                        this.page = data.pagination?.current_page || page;
+                        this.lastPage = data.pagination?.last_page || 1;
+                        this.hasMore = data.pagination?.has_more || false;
                         this.loading = false;
-                        initMap(data);
+                        this.loadingMore = false;
+                    })
+                    .catch(() => {
+                        this.loading = false;
+                        this.loadingMore = false;
                     });
+            },
+            loadMore() {
+                if (!this.hasMore || this.loadingMore) return;
+                this.loadRoutes(this.page + 1);
             },
             get filteredRoutes() {
                 return this.routes.filter(r => {
@@ -142,6 +180,21 @@
                     </div>
                 </template>
 
+                <template x-if="loadingMore">
+                    <div class="p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+                        Cargando más rutas...
+                    </div>
+                </template>
+
+                <template x-if="hasMore && !loading && !loadingMore">
+                    <div class="p-4 text-center">
+                        <button @click="loadMore()" 
+                                class="px-4 py-2 text-xs font-semibold text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 transition">
+                            Cargar más rutas
+                        </button>
+                    </div>
+                </template>
+
                 <template x-for="route in filteredRoutes" :key="route.id">
                     <div @click="selectRoute(route.id)" 
                          class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition flex justify-between items-start gap-2">
@@ -153,6 +206,18 @@
                                     <span x-text="route.properties.name"></span>
                                 </h3>
                                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 capitalize" x-text="route.properties.transport_type"></p>
+                                <template x-if="route.properties.is_additional">
+                                    <p class="text-[10px] text-blue-500 dark:text-blue-400 mt-0.5 font-semibold">Interurbana</p>
+                                </template>
+                                <template x-if="route.properties.round_trip">
+                                    <p class="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">Ida y Vuelta <span class="text-[9px]">(diferente)</span></p>
+                                </template>
+                                <template x-if="route.properties.has_designated_stops">
+                                    <p class="text-[10px] text-blue-500 dark:text-blue-400 mt-0.5 font-semibold">Paradas designadas</p>
+                                </template>
+                                <template x-if="!route.properties.has_designated_stops">
+                                    <p class="text-[10px] text-yellow-600 dark:text-yellow-400 mt-0.5 font-semibold">A solicitud</p>
+                                </template>
                                 <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 line-clamp-1" x-text="route.properties.description || 'Sin descripción'"></p>
                             </div>
                         </div>
@@ -187,6 +252,7 @@
             let map;
             let geojsonLayer;
             let layersMap = {}; // Maps routeId to leaflet layer
+            let initialFitDone = false;
 
             function initMap(geojson) {
                 // Initialize map centered at city coordinates
@@ -199,13 +265,19 @@
                 }).addTo(map);
 
                 // Add GeoJSON Layer
-                geojsonLayer = L.geoJSON(geojson, {
+                geojsonLayer = L.geoJSON(null, {
                     style: function(feature) {
-                        return {
+                        let style = {
                             color: feature.properties.color || '#3b82f6',
                             weight: 4,
                             opacity: 0.8
                         };
+                        if (feature.properties.is_return) {
+                            style.dashArray = '8, 8';
+                            style.opacity = 0.6;
+                            style.weight = 3;
+                        }
+                        return style;
                     },
                     onEachFeature: function(feature, layer) {
                         layersMap[feature.id] = layer;
@@ -218,6 +290,9 @@
                                     ${feature.properties.name}
                                 </h3>
                                 <p class="text-xs text-gray-500 capitalize my-1">${feature.properties.transport_type}</p>
+                                <p class="text-[10px] my-1 font-semibold ${feature.properties.has_designated_stops ? 'text-blue-600' : 'text-yellow-600'}">
+                                    ${feature.properties.has_designated_stops ? 'Paradas designadas' : 'A solicitud'}
+                                </p>
                                 <a href="${feature.properties.url}" class="text-xs font-semibold text-blue-600 hover:underline block mt-2">Ver detalles de la ruta &rarr;</a>
                             </div>
                         `;
@@ -246,10 +321,13 @@
                     }
                 }).addTo(map);
 
-                // Fit map to layer bounds if features exist
-                if (geojson.features && geojson.features.length > 0) {
-                    map.fitBounds(geojsonLayer.getBounds(), { padding: [50, 50] });
-                }
+                addRoutesToMap(geojson);
+            }
+
+            function addRoutesToMap(geojson) {
+                if (!geojsonLayer || !geojson || !geojson.features) return;
+
+                geojsonLayer.addData(geojson);
             }
 
             function selectLayer(layer) {

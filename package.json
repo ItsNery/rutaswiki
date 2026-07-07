@@ -21,6 +21,9 @@
     "dependencies": {
         "@turf/turf": "^7.3.5",
         "leaflet": "^1.9.4",
-        "leaflet-draw": "^1.0.4"
+        "leaflet-draw": "^1.0.4",
+        "leaflet-geometryutil": "^0.10.3",
+        "leaflet-snap": "^0.0.4",
+        "tom-select": "^2.6.2"
     }
 }

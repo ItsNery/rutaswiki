@@ -3,12 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class TransitRoute extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'city_id',
         'user_id',
@@ -18,6 +19,9 @@ class TransitRoute extends Model
         'description',
         'transport_type',
         'geometry',
+        'geometry_return',
+        'round_trip',
+        'has_designated_stops',
         'color',
         'status',
         'vote_score',
@@ -26,6 +30,9 @@ class TransitRoute extends Model
 
     protected $casts = [
         'geometry' => 'array',
+        'geometry_return' => 'array',
+        'round_trip' => 'boolean',
+        'has_designated_stops' => 'boolean',
     ];
 
     protected static function boot()
@@ -54,6 +61,12 @@ class TransitRoute extends Model
     public function city(): BelongsTo
     {
         return $this->belongsTo(City::class);
+    }
+
+    public function cities(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(City::class, 'city_route')
+            ->withTimestamps();
     }
 
     public function user(): BelongsTo

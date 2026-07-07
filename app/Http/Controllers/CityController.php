@@ -106,6 +106,7 @@ class CityController extends Controller
         Cache::forget('map.all_routes');
         foreach (City::pluck('id') as $cid) {
             Cache::forget("map.city.{$cid}.nearby");
+            Cache::increment("api.city.{$cid}.routes_version");
         }
 
         return redirect()->route('cities.show', $city)

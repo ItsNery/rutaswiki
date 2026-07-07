@@ -257,7 +257,7 @@
                         this.routesCount = 0;
                         this.clearRoutesLayer();
 
-                        fetch(`/api/cities/${city.slug}/routes`)
+                        fetch(`/api/cities/${city.slug}/routes?all=1`)
                             .then(res => res.json())
                             .then(data => {
                                 if (data.features && data.features.length > 0) {

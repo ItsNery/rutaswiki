@@ -207,9 +207,17 @@
                                                             $max--;
                                                         }
                                                     } catch (\Exception $e) {}
+                                                    $now = \Carbon\Carbon::now();
+                                                    $nextDeparture = null;
+                                                    foreach ($times as $time) {
+                                                        if (\Carbon\Carbon::createFromFormat('H:i', $time)->greaterThanOrEqualTo($now)) {
+                                                            $nextDeparture = $time;
+                                                            break;
+                                                        }
+                                                    }
                                                 @endphp
                                                 @forelse($times as $time)
-                                                    <span class="px-2 py-0.5 bg-gray-55 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded shadow-xs" title="Corrida estimada">{{ $time }}</span>
+                                                    <span class="px-2 py-0.5 bg-gray-55 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded shadow-xs {{ $time === $nextDeparture ? 'font-bold text-blue-600 dark:text-blue-400 ring-2 ring-blue-400' : '' }}" title="{{ $time === $nextDeparture ? 'Próxima corrida' : 'Corrida estimada' }}">{{ $time }}</span>
                                                 @empty
                                                     <span class="text-gray-500 italic">No se pudo calcular el horario estimado</span>
                                                 @endforelse
@@ -228,9 +236,22 @@
                     <!-- == Paradas == -->
                     <div class="mt-8">
                         <h2 class="text-xl font-normal font-serif border-b border-gray-300 dark:border-gray-700 pb-1 mb-4 flex justify-between items-center">
-                            <span>Paradas</span>
+                            <span class="flex items-center gap-2">
+                                Paradas
+                                @if($route->has_designated_stops)
+                                    <span class="text-[10px] font-bold font-sans uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Designadas</span>
+                                @else
+                                    <span class="text-[10px] font-bold font-sans uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300">A solicitud</span>
+                                @endif
+                            </span>
                             <a href="{{ route('routes.edit', [$city, $route]) }}" class="text-xs text-blue-600 dark:text-blue-400 hover:underline font-normal font-sans">[editar]</a>
                         </h2>
+                        
+                        @if(!$route->has_designated_stops && $route->stops->count() > 0)
+                            <div class="mb-4 p-2 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-300 dark:border-yellow-700 rounded text-xs text-yellow-800 dark:text-yellow-200">
+                                Esta ruta no tiene paradas designadas. Los pasajeros pueden solicitar paradas adicionales directamente al conductor con anticipación.
+                            </div>
+                        @endif
                         
                         <div class="relative pl-6 border-l-2 border-blue-500 dark:border-blue-700 space-y-6">
                             @forelse($route->stops as $stop)
@@ -274,6 +295,17 @@
                                         <a href="{{ route('cities.show', $city) }}" class="text-blue-600 dark:text-blue-400 hover:underline font-semibold">{{ $city->name }}</a>
                                     </td>
                                 </tr>
+                                @php $otherCities = $route->cities()->where('city_id', '!=', $city->id)->get(); @endphp
+                                @if($otherCities->isNotEmpty())
+                                <tr>
+                                    <th class="px-4 py-2.5 font-semibold text-gray-500 dark:text-gray-400">También pasa</th>
+                                    <td class="px-4 py-2.5 text-gray-900 dark:text-white">
+                                        @foreach($otherCities as $oc)
+                                            <a href="{{ route('cities.show', $oc) }}" class="text-blue-600 dark:text-blue-400 hover:underline">{{ $oc->name }}</a>@if(!$loop->last), @endif
+                                        @endforeach
+                                    </td>
+                                </tr>
+                                @endif
                                 <tr>
                                     <th class="px-4 py-2.5 font-semibold text-gray-500 dark:text-gray-400">Tipo</th>
                                     <td class="px-4 py-2.5 text-gray-900 dark:text-white capitalize">{{ $route->transport_type }}</td>
@@ -287,8 +319,24 @@
                                 </tr>
                                 <tr>
                                     <th class="px-4 py-2.5 font-semibold text-gray-500 dark:text-gray-400">Paradas</th>
-                                    <td class="px-4 py-2.5 text-gray-900 dark:text-white">{{ $route->stops->count() }} estaciones</td>
+                                    <td class="px-4 py-2.5 text-gray-900 dark:text-white">
+                                        {{ $route->stops->count() }} estaciones
+                                        @if($route->has_designated_stops)
+                                            <span class="text-[10px] font-bold ml-1 text-blue-600 dark:text-blue-400">(designadas)</span>
+                                        @else
+                                            <span class="text-[10px] font-bold ml-1 text-yellow-600 dark:text-yellow-400">(a solicitud)</span>
+                                        @endif
+                                    </td>
                                 </tr>
+                                @if($route->round_trip)
+                                <tr class="bg-gray-50 dark:bg-gray-800/40">
+                                    <th class="px-4 py-2.5 font-semibold text-gray-500 dark:text-gray-400">Trayecto</th>
+                                    <td class="px-4 py-2.5 text-gray-900 dark:text-white">
+                                        Ida y Vuelta
+                                        <span class="text-[10px] text-gray-400 ml-1">(diferente)</span>
+                                    </td>
+                                </tr>
+                                @endif
                                 @if($route->schedules->count() > 0)
                                     @foreach($route->schedules as $sched)
                                         <tr class="{{ $loop->even ? 'bg-gray-50 dark:bg-gray-800/40' : '' }}">
@@ -413,6 +461,8 @@
                 fetch('{{ route('api.routes.show', $route) }}')
                     .then(res => res.json())
                     .then(routeData => {
+                        const combinedGroup = L.featureGroup();
+
                         const polyline = L.geoJSON(routeData.geometry, {
                             style: {
                                 color: routeData.color || '#3b82f6',
@@ -420,6 +470,20 @@
                                 opacity: 0.9
                             }
                         }).addTo(map);
+                        combinedGroup.addLayer(polyline);
+
+                        // Draw return line if round trip
+                        if (routeData.round_trip && routeData.geometry_return) {
+                            const returnLine = L.geoJSON(routeData.geometry_return, {
+                                style: {
+                                    color: routeData.color || '#3b82f6',
+                                    weight: 5,
+                                    opacity: 0.7,
+                                    dashArray: '8, 8'
+                                }
+                            }).addTo(map);
+                            combinedGroup.addLayer(returnLine);
+                        }
 
                         const markersGroup = L.featureGroup();
                         if (routeData.stops && routeData.stops.length > 0) {
@@ -429,12 +493,9 @@
                                 markersGroup.addLayer(marker);
                             });
                             markersGroup.addTo(map);
-                        }
-
-                        const combinedGroup = L.featureGroup([polyline]);
-                        if (routeData.stops && routeData.stops.length > 0) {
                             combinedGroup.addLayer(markersGroup);
                         }
+
                         map.fitBounds(combinedGroup.getBounds(), { padding: [20, 20] });
                     });
             });
