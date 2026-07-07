@@ -49,29 +49,34 @@ class TransitRouteSeeder extends Seeder
                 'revision_count' => 1,
             ]);
 
-            $route1->stops()->createMany([
+            $stopsData = [
                 [
                     'name' => 'Plaza Principal Tlaxco',
                     'latitude' => 19.6141,
                     'longitude' => -98.1197,
-                    'order' => 1,
                     'description' => 'Salida principal a un costado del kiosko.'
                 ],
                 [
                     'name' => 'Cruce de Carretera',
                     'latitude' => 19.5850,
                     'longitude' => -98.1500,
-                    'order' => 2,
                     'description' => 'Punto de transbordo.'
                 ],
                 [
                     'name' => 'La Barca de la Fe',
                     'latitude' => 19.5686,
                     'longitude' => -98.2758,
-                    'order' => 3,
                     'description' => 'Terminal enfrente del templo.'
                 ]
-            ]);
+            ];
+
+            foreach ($stopsData as $index => $stopData) {
+                $stop = \App\Models\Stop::firstOrCreate(
+                    ['latitude' => $stopData['latitude'], 'longitude' => $stopData['longitude']],
+                    ['name' => $stopData['name'], 'description' => $stopData['description']]
+                );
+                $route1->stops()->attach($stop->id, ['order' => $index + 1]);
+            }
 
             $route1->comments()->create([
                 'user_id' => $user->id,

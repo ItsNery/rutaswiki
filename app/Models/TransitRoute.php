@@ -79,9 +79,11 @@ class TransitRoute extends Model
         return $this->hasMany(RouteSchedule::class);
     }
 
-    public function stops(): HasMany
+    public function stops(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
-        return $this->hasMany(Stop::class)->orderBy('order', 'asc');
+        return $this->belongsToMany(Stop::class, 'route_stop')
+            ->withPivot('order')
+            ->orderBy('route_stop.order', 'asc');
     }
 
     public function comments(): HasMany

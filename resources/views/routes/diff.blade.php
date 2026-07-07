@@ -48,6 +48,56 @@
                 </div>
             @endif
 
+            <!-- Visual Revision Timeline -->
+            <div class="bg-gray-50 dark:bg-gray-800/40 border border-gray-300 dark:border-gray-700 p-4 mb-6 rounded-sm">
+                <h2 class="text-sm font-bold text-gray-900 dark:text-white mb-3">Línea de tiempo de revisiones</h2>
+                <div class="flex gap-4 overflow-x-auto pb-2 snap-x scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700">
+                    
+                    <!-- Versión Actual Publicada Card -->
+                    <div class="flex-none w-48 snap-start">
+                        <a href="{{ route('routes.history.diff', [$city, $route, $route->revisions->first()]) }}?against=current" class="block">
+                            <div class="border rounded p-2 transition bg-white dark:bg-gray-800 hover:shadow-sm cursor-pointer h-full flex flex-col justify-between 
+                                        {{ $comparingWithCurrent ? 'border-green-500 ring-2 ring-green-100 dark:ring-green-900/30' : 'border-gray-200 dark:border-gray-700' }}">
+                                <div id="mini-map-current" class="h-20 w-full bg-gray-100 dark:bg-gray-900 rounded mb-1.5 overflow-hidden pointer-events-none relative">
+                                    <span class="absolute top-1 left-1 z-[1000] text-[8px] font-bold px-1.5 py-0.5 rounded bg-green-500 text-white shadow-sm font-sans">Actual</span>
+                                </div>
+                                <div class="text-[10px] space-y-0.5">
+                                    <div class="font-bold text-gray-900 dark:text-white truncate">Versión Actual</div>
+                                    <div class="text-gray-500 dark:text-gray-400 truncate">Editor: {{ $route->user?->name ?? 'Anónimo' }}</div>
+                                    <div class="italic text-gray-400 truncate">"Versión publicada"</div>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+
+                    <!-- Revisions -->
+                    @foreach($route->revisions as $rev)
+                        <div class="flex-none w-48 snap-start">
+                            <a href="{{ route('routes.history.diff', [$city, $route, $rev]) }}" class="block">
+                                <div class="border rounded p-2 transition bg-white dark:bg-gray-800 hover:shadow-sm cursor-pointer h-full flex flex-col justify-between 
+                                            {{ (!$comparingWithCurrent && $revision->id === $rev->id) ? 'border-blue-500 ring-2 ring-blue-100 dark:ring-blue-900/30' : (($previousRevision && $previousRevision->id === $rev->id) ? 'border-gray-500 ring-2 ring-gray-100 dark:ring-gray-900/30' : 'border-gray-200 dark:border-gray-700') }}">
+                                    <div id="mini-map-{{ $rev->id }}" class="h-20 w-full bg-gray-100 dark:bg-gray-900 rounded mb-1.5 overflow-hidden pointer-events-none relative font-mono text-[10px]">
+                                        @if(!$comparingWithCurrent && $revision->id === $rev->id)
+                                            <span class="absolute top-1 left-1 z-[1000] text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-500 text-white shadow-sm font-sans">Nueva</span>
+                                        @elseif($previousRevision && $previousRevision->id === $rev->id)
+                                            <span class="absolute top-1 left-1 z-[1000] text-[8px] font-bold px-1.5 py-0.5 rounded bg-gray-500 text-white shadow-sm font-sans">Anterior</span>
+                                        @endif
+                                    </div>
+                                    <div class="text-[10px] space-y-0.5">
+                                        <div class="font-bold text-gray-900 dark:text-white truncate">{{ $rev->created_at->format('d M Y, H:i') }}</div>
+                                        <div class="text-gray-500 dark:text-gray-400 truncate">Editor: {{ $rev->user?->name ?? 'Anónimo' }}</div>
+                                        <div class="italic text-gray-600 dark:text-gray-300 truncate" title="{{ $rev->change_summary ?: 'Sin resumen de edición' }}">
+                                            "{{ $rev->change_summary ?: 'Sin resumen' }}"
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    @endforeach
+
+                </div>
+            </div>
+
             <!-- Map Overlay -->
             <div class="bg-gray-50 dark:bg-gray-800/40 border border-gray-300 dark:border-gray-700 p-4 mb-6 rounded-sm">
                 <h2 class="text-sm font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-3">
@@ -331,6 +381,103 @@
                     return div;
                 };
                 legend.addTo(map);
+
+                // --- Visual Revision Timeline Mini-Maps ---
+                const miniMapsData = [];
+
+                miniMapsData.push({
+                    id: 'current',
+                    color: '{{ $route->color }}',
+                    geometry: @json($route->geometry),
+                    geometryReturn: @json($route->geometry_return)
+                });
+
+                @foreach($route->revisions as $rev)
+                    miniMapsData.push({
+                        id: '{{ $rev->id }}',
+                        color: '#6366f1',
+                        geometry: @json($rev->geometry),
+                        geometryReturn: @json($rev->geometry_return)
+                    });
+                @endforeach
+
+                function initMiniMap(mapId, item) {
+                    const miniMap = L.map(mapId, {
+                        zoomControl: false,
+                        dragging: false,
+                        touchZoom: false,
+                        scrollWheelZoom: false,
+                        doubleClickZoom: false,
+                        boxZoom: false,
+                        keyboard: false,
+                        attributionControl: false
+                    }).setView([{{ $city->latitude }}, {{ $city->longitude }}], {{ $city->zoom_level - 1 }});
+
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 19
+                    }).addTo(miniMap);
+
+                    const layers = [];
+
+                    if (item.geometry) {
+                        const layer = L.geoJSON(item.geometry, {
+                            style: {
+                                color: item.color,
+                                weight: 3,
+                                opacity: 0.8
+                            }
+                        }).addTo(miniMap);
+                        layers.push(layer);
+                    }
+
+                    if (item.geometryReturn) {
+                        const layerReturn = L.geoJSON(item.geometryReturn, {
+                            style: {
+                                color: item.color,
+                                weight: 2,
+                                opacity: 0.6,
+                                dashArray: '4, 4'
+                            }
+                        }).addTo(miniMap);
+                        layers.push(layerReturn);
+                    }
+
+                    if (layers.length > 0) {
+                        const group = L.featureGroup(layers);
+                        if (group.getBounds().isValid()) {
+                            miniMap.fitBounds(group.getBounds(), { padding: [5, 5] });
+                        }
+                    }
+                }
+
+                // Intersection Observer to lazy load mini maps in horizontal scroll viewport
+                const observer = new IntersectionObserver(function(entries) {
+                    entries.forEach(function(entry) {
+                        if (entry.isIntersecting) {
+                            const element = entry.target;
+                            const itemId = element.dataset.id;
+                            const item = miniMapsData.find(d => d.id == itemId);
+                            if (item && !element.dataset.loaded) {
+                                initMiniMap(element.id, item);
+                                element.dataset.loaded = "true";
+                                observer.unobserve(element);
+                            }
+                        }
+                    });
+                }, { 
+                    root: document.querySelector('.overflow-x-auto'), 
+                    rootMargin: '0px 150px 0px 150px' 
+                });
+
+                // Set up elements for observation
+                miniMapsData.forEach(function(item) {
+                    const mapId = 'mini-map-' + item.id;
+                    const element = document.getElementById(mapId);
+                    if (element) {
+                        element.dataset.id = item.id;
+                        observer.observe(element);
+                    }
+                });
             });
         </script>
     @endpush

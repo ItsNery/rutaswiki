@@ -51,17 +51,34 @@ class TransitRouteController extends Controller
         $url = 'https://nominatim.openstreetmap.org/search?q=' . urlencode($name) . '&format=json&addressdetails=1&limit=1&accept-language=es';
 
         try {
-            $context = stream_context_create([
-                'http' => [
-                    'method' => 'GET',
-                    'header' => "User-Agent: RutasWiki/1.0\r\nAccept: application/json\r\n",
-                    'timeout' => 5,
-                ],
-                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
-            ]);
+            $result = null;
 
-            $result = @file_get_contents($url, false, $context);
-            if ($result === false) return null;
+            if (function_exists('curl_version')) {
+                $ch = curl_init($url);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_USERAGENT => 'RutasWiki/1.0',
+                    CURLOPT_TIMEOUT => 10,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_HTTPHEADER => ['Accept: application/json'],
+                ]);
+                $result = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                if ($httpCode !== 200) $result = null;
+            } else {
+                $context = stream_context_create([
+                    'http' => [
+                        'method' => 'GET',
+                        'header' => "User-Agent: RutasWiki/1.0\r\nAccept: application/json\r\n",
+                        'timeout' => 10,
+                    ],
+                    'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+                ]);
+                $result = @file_get_contents($url, false, $context);
+            }
+
+            if ($result === false || $result === null) return null;
 
             $data = json_decode($result, true);
             if (empty($data)) return null;
@@ -120,13 +137,25 @@ class TransitRouteController extends Controller
 
             if (!empty($validated['stops'])) {
                 foreach ($validated['stops'] as $index => $stopData) {
-                    $route->stops()->create([
-                        'name' => $stopData['name'],
-                        'latitude' => $stopData['latitude'],
-                        'longitude' => $stopData['longitude'],
-                        'order' => $index + 1,
-                        'description' => $stopData['description'] ?? null,
-                    ]);
+                    $stop = Stop::where('latitude', $stopData['latitude'])
+                        ->where('longitude', $stopData['longitude'])
+                        ->first();
+
+                    if (!$stop) {
+                        $stop = Stop::create([
+                            'name' => $stopData['name'],
+                            'latitude' => $stopData['latitude'],
+                            'longitude' => $stopData['longitude'],
+                            'description' => $stopData['description'] ?? null,
+                        ]);
+                    } else {
+                        $stop->update([
+                            'name' => $stopData['name'],
+                            'description' => $stopData['description'] ?? $stop->description,
+                        ]);
+                    }
+
+                    $route->stops()->attach($stop->id, ['order' => $index + 1]);
                 }
             }
         });
@@ -156,7 +185,7 @@ class TransitRouteController extends Controller
     {
         abort_unless($route->city_id === $city->id, 404);
 
-        $route->load(['stops', 'comments.user', 'revisions.user', 'user', 'schedules']);
+        $route->load(['stops.transitRoutes.city', 'comments.user', 'revisions.user', 'user', 'schedules']);
         
         $userVote = Auth::check() ? $route->votes()->where('user_id', Auth::id())->first()?->value : null;
 
@@ -187,7 +216,7 @@ class TransitRouteController extends Controller
                     'name' => $stop->name,
                     'latitude' => $stop->latitude,
                     'longitude' => $stop->longitude,
-                    'order' => $stop->order,
+                    'order' => $stop->pivot->order,
                     'description' => $stop->description,
                 ];
             })->toArray();
@@ -226,16 +255,28 @@ class TransitRouteController extends Controller
                 }
             }
 
-            $route->stops()->delete();
+            $route->stops()->detach();
             if (!empty($validated['stops'])) {
                 foreach ($validated['stops'] as $index => $stopData) {
-                    $route->stops()->create([
-                        'name' => $stopData['name'],
-                        'latitude' => $stopData['latitude'],
-                        'longitude' => $stopData['longitude'],
-                        'order' => $index + 1,
-                        'description' => $stopData['description'] ?? null,
-                    ]);
+                    $stop = Stop::where('latitude', $stopData['latitude'])
+                        ->where('longitude', $stopData['longitude'])
+                        ->first();
+
+                    if (!$stop) {
+                        $stop = Stop::create([
+                            'name' => $stopData['name'],
+                            'latitude' => $stopData['latitude'],
+                            'longitude' => $stopData['longitude'],
+                            'description' => $stopData['description'] ?? null,
+                        ]);
+                    } else {
+                        $stop->update([
+                            'name' => $stopData['name'],
+                            'description' => $stopData['description'] ?? $stop->description,
+                        ]);
+                    }
+
+                    $route->stops()->attach($stop->id, ['order' => $index + 1]);
                 }
             }
         });
@@ -260,7 +301,7 @@ class TransitRouteController extends Controller
         abort_unless($route->city_id === $city->id, 404);
         abort_unless($revision->transit_route_id === $route->id, 404);
 
-        $route->load(['stops', 'city', 'user']);
+        $route->load(['stops', 'city', 'user', 'revisions.user']);
 
         // Support ?against=current to compare against current route state
         // or ?against=REVISION_ID to compare against a specific revision
@@ -277,7 +318,7 @@ class TransitRouteController extends Controller
             $newGeometry = $route->geometry;
             $newGeometryReturn = $route->geometry_return;
             $newStops = $route->stops->map(function ($stop) {
-                return ['name' => $stop->name, 'latitude' => $stop->latitude, 'longitude' => $stop->longitude, 'order' => $stop->order, 'description' => $stop->description];
+                return ['name' => $stop->name, 'latitude' => $stop->latitude, 'longitude' => $stop->longitude, 'order' => $stop->pivot->order, 'description' => $stop->description];
             })->toArray();
             $newRoundTrip = $route->round_trip ?? false;
 

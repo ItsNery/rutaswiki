@@ -231,7 +231,7 @@ class RouteApiController extends Controller
                         'name' => $stop->name,
                         'latitude' => $stop->latitude,
                         'longitude' => $stop->longitude,
-                        'order' => $stop->order,
+                        'order' => $stop->pivot->order,
                         'description' => $stop->description,
                     ];
                 }),
@@ -263,17 +263,39 @@ class RouteApiController extends Controller
             out center;";
 
         try {
-            $context = stream_context_create([
-                'http' => [
-                    'method' => 'POST',
-                    'header' => "Content-Type: text/plain\r\nUser-Agent: RutasWiki/1.0\r\nAccept: application/json\r\n",
-                    'content' => $query,
-                    'timeout' => 10,
-                ],
-                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
-            ]);
-            $result = @file_get_contents('https://overpass-api.de/api/interpreter', false, $context);
-            if ($result === false) {
+            $query = '[out:json];node["place"](' . $minLat . ',' . $minLng . ',' . $maxLat . ',' . $maxLng . ');out center;';
+
+            if (function_exists('curl_version')) {
+                $ch = curl_init('https://overpass-api.de/api/interpreter');
+                curl_setopt_array($ch, [
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => $query,
+                    CURLOPT_HTTPHEADER => ['Content-Type: text/plain'],
+                    CURLOPT_USERAGENT => 'RutasWiki/1.0',
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 30,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                ]);
+                $result = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                if ($httpCode !== 200) {
+                    return response()->json(['error' => 'Overpass API returned HTTP ' . $httpCode], 502);
+                }
+            } else {
+                $context = stream_context_create([
+                    'http' => [
+                        'method' => 'POST',
+                        'header' => "Content-Type: text/plain\r\nUser-Agent: RutasWiki/1.0\r\nAccept: application/json\r\n",
+                        'content' => $query,
+                        'timeout' => 30,
+                    ],
+                    'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+                ]);
+                $result = @file_get_contents('https://overpass-api.de/api/interpreter', false, $context);
+            }
+
+            if ($result === false || empty($result)) {
                 return response()->json(['error' => 'Overpass API unreachable'], 502);
             }
             $data = json_decode($result, true);

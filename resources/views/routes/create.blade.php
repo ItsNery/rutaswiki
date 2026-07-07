@@ -632,7 +632,7 @@
                                 guides.push(layer);
                             }
                         });
-                        this.map.drawControl.setDrawingOptions({
+                        this.drawControl.setDrawingOptions({
                             polyline: {
                                 guideLayers: guides.length > 0 ? guides : undefined,
                                 snapDistance: 15

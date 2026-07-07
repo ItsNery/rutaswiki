@@ -100,6 +100,7 @@
             },
             get filteredRoutes() {
                 return this.routes.filter(r => {
+                    if (r.properties.is_return) return false;
                     const matchesSearch = r.properties.name.toLowerCase().includes(this.search.toLowerCase()) || 
                                           (r.properties.route_number && r.properties.route_number.includes(this.search));
                     const matchesType = this.typeFilter === 'all' || r.properties.transport_type === this.typeFilter;
@@ -316,6 +317,11 @@
                             },
                             click: function(e) {
                                 selectLayer(e.target);
+                                if (feature.properties.is_return) {
+                                    let parentId = feature.id.replace('-return', '');
+                                    let parent = layersMap[parentId];
+                                    if (parent) selectLayer(parent);
+                                }
                             }
                         });
                     }
@@ -335,8 +341,12 @@
                 if (window.selectedLayer) {
                     geojsonLayer.resetStyle(window.selectedLayer);
                 }
+                if (window.selectedReturnLayer) {
+                    geojsonLayer.resetStyle(window.selectedReturnLayer);
+                    window.selectedReturnLayer = null;
+                }
                 window.selectedLayer = layer;
-                
+
                 // Style new selection
                 layer.setStyle({
                     weight: 8,
@@ -350,9 +360,20 @@
                 if (layer) {
                     selectLayer(layer);
                     layer.openPopup();
-                    
+
+                    // Also highlight return layer if round trip
+                    let returnLayer = layersMap[routeId + '-return'];
+                    if (returnLayer) {
+                        window.selectedReturnLayer = returnLayer;
+                        returnLayer.setStyle({ weight: 8, opacity: 1 });
+                        returnLayer.bringToFront();
+                    }
+
                     // Pan map to layer center/bounds
                     let bounds = layer.getBounds();
+                    if (returnLayer && returnLayer.getBounds().isValid()) {
+                        bounds = bounds.extend(returnLayer.getBounds());
+                    }
                     map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
                 }
             }

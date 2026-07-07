@@ -257,9 +257,19 @@
                             @forelse($route->stops as $stop)
                                 <div class="relative">
                                     <span class="absolute -left-[31px] top-1 flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white font-mono text-[9px] font-bold ring-4 ring-white dark:ring-gray-900">
-                                        {{ $stop->order }}
+                                        {{ $stop->pivot->order }}
                                     </span>
-                                    <h3 class="font-bold text-gray-900 dark:text-white text-sm">{{ $stop->name }}</h3>
+                                    <div class="flex flex-wrap items-baseline gap-x-2">
+                                        <h3 class="font-bold text-gray-900 dark:text-white text-sm">{{ $stop->name }}</h3>
+                                        @if($stop->transitRoutes->count() > 1)
+                                            <span class="text-[10px] font-sans font-medium text-gray-500 dark:text-gray-400">
+                                                (usada por {{ $stop->transitRoutes->count() }} rutas: 
+                                                @foreach($stop->transitRoutes->where('id', '!=', $route->id) as $otherRoute)
+                                                    <a href="{{ route('routes.show', [$otherRoute->city, $otherRoute]) }}" class="text-blue-500 dark:text-blue-400 hover:underline font-semibold">{{ $otherRoute->route_number }}</a>{{ !$loop->last ? ',' : '' }}
+                                                @endforeach)
+                                            </span>
+                                        @endif
+                                    </div>
                                     @if($stop->description)
                                         <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ $stop->description }}</p>
                                     @endif

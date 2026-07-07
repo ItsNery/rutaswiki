@@ -9,16 +9,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Stop extends Model
 {
     protected $fillable = [
-        'transit_route_id',
         'name',
         'latitude',
         'longitude',
-        'order',
         'description',
     ];
 
-    public function transitRoute(): BelongsTo
+    public function transitRoutes(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
-        return $this->belongsTo(TransitRoute::class);
+        return $this->belongsToMany(TransitRoute::class, 'route_stop')
+            ->withPivot('order')
+            ->withTimestamps();
     }
 }
